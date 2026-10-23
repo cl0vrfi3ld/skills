@@ -44,7 +44,7 @@ The calendar feed is the core of the skill. Announcement feeds are optional and 
 
 Python 3.9 or newer. Times are converted using the operating system's own clock rules.
 
-Feed URLs are set in the Hermes `.env` (`~/.hermes/.env`, or `$HERMES_HOME/.env` for a named profile):
+Feed URLs are set in the Hermes `.env` file (`$HERMES_HOME/.env`, or `.env` inside `~/.hermes/`):
 
 ```dotenv
 BRIGHTSPACE_ICS_URL="https://<your-brightspace-host>/d2l/le/calendar/feed/user/feed.ics?token=..."
@@ -124,13 +124,13 @@ Exit codes: `0` success, `1` fetch or parse failure, `2` missing configuration.
 3. On exit `1`, or `Warning: skipped` lines on stderr, match the message against Pitfalls. Errors name feeds as "calendar feed" or "announcement feed N" (in `BRIGHTSPACE_RSS_URLS` order), never by URL. A partial announcements result is still usable: report what came back and which feed failed.
 4. Present items nearest first, each with its course. Times are already converted to local time; if the zone shown is `UTC` and the user isn't in UTC, rerun with `--tz <their zone>` and suggest setting `BRIGHTSPACE_TZ`.
 
-The `BRIGHTSPACE_*` values contain access tokens. Never print, echo, log, or inspect them (no `echo $BRIGHTSPACE_RSS_URLS`, no `env | grep`), never ask for them in chat, and never read or edit `.env`. To diagnose configuration, use the `feeds` subcommand and the script's error messages, neither of which contains any URL.
+The `BRIGHTSPACE_*` values contain access tokens. Never print, echo, log, or inspect them (never echo the variables or dump the environment), never ask for them in chat, and never read or edit `.env`. To diagnose configuration, use the `feeds` subcommand and the script's error messages, neither of which contains any URL.
 
 ## Pitfalls
 
 - **HTML page instead of a feed, or HTTP 401/403:** the feed token was regenerated or Calendar Feeds were switched off. The user needs to copy a fresh URL into `.env`.
 - **Deadline shown on the wrong day:** Brightspace stores every time in UTC, so a deadline of 11:59 PM on Friday in New York is saved as 03:59 on Saturday. The script converts to local time; always report its `due_display` / `due_iso`, never the raw times in the feed. On a server or container whose clock is set to UTC, that conversion has nothing to correct, so set `BRIGHTSPACE_TZ`. Hermes's own `timezone` setting doesn't reach `terminal`.
-- **"timezone not found" warning:** zone names like `Europe/London` need a timezone database, which Windows Python and slim containers often lack. The script falls back to system local time. Fix it with a fixed offset such as `-05:00` (ignores daylight saving), `pip install tzdata`, or by removing the override on a machine already set to the right zone.
+- **"timezone not found" warning:** zone names like `Europe/London` need a timezone database, which Windows Python and slim containers often lack. The script falls back to system local time. Fix it with a fixed offset such as `-05:00` (ignores daylight saving), by installing the `tzdata` Python package, or by removing the override on a machine already set to the right zone.
 - **A course's announcements are missing:** each course needs its own RSS feed. Run `brightspace.py feeds` to see which courses the configured feeds cover, and compare that against the courses in the calendar feed. Ask the user to add a feed for any course that's missing.
 - **New term:** the calendar feed picks up new courses automatically; announcement feeds don't. Use `feeds` to spot old and missing courses, then ask the user to update their feed list.
 - **Not every event is a deadline:** the calendar includes everything on it, such as class meetings, office hours, and availability windows. D2L usually marks real deadlines and windows with title suffixes such as `- Due`, `- Availability Ends`, `- Availability Begins`, or `- Start`; judge by title rather than treating every row as due work.

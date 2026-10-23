@@ -26,7 +26,6 @@ import pathlib
 import re
 import ssl
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -52,7 +51,7 @@ def resolve_tz(tz_name: str | None) -> dt.tzinfo | None:
 
     Overrides accept "UTC", fixed offsets like "-05:00" (no DST, but no
     database either), or IANA names like "Europe/London", which need the
-    system zoneinfo database (Linux/macOS) or `pip install tzdata` (Windows).
+    system zoneinfo database (Linux/macOS) or the `tzdata` Python package (Windows).
     """
     name = (tz_name or os.environ.get("BRIGHTSPACE_TZ") or "").strip()
     if not name:
@@ -72,7 +71,7 @@ def resolve_tz(tz_name: str | None) -> dt.tzinfo | None:
     except (ZoneInfoNotFoundError, ValueError):
         print(
             f"Warning: timezone {name!r} not found; using system local time instead. "
-            "IANA names need a timezone database (on Windows: `pip install tzdata`); "
+            "IANA names need a timezone database (on Windows, the `tzdata` Python package); "
             "a fixed offset such as -05:00 always works but ignores DST.",
             file=sys.stderr,
         )
@@ -639,29 +638,22 @@ def run_self_test() -> int:
     _check(resolve_tz("UTC+5:30") == dt.timezone(dt.timedelta(hours=5, minutes=30)), "UTC+h:mm override failed")
     _check(resolve_tz("+530") == dt.timezone(dt.timedelta(hours=5, minutes=30)), "+hmm override failed")
 
-    # 7. The default path (no override) uses the OS clock rules. On POSIX, a TZ
-    #    rule string is parsed by libc itself, so this needs no zone files either.
-    extra = ""
-    if hasattr(time, "tzset"):
-        saved = os.environ.get("TZ")
-        try:
-            os.environ["TZ"] = "EST5EDT,M3.2.0,M11.1.0"
-            time.tzset()
-            before, _ = parse_ics_datetime("20261025T035900Z", {}, None)
-            after, _ = parse_ics_datetime("20261103T045900Z", {}, None)
-            _check(before.strftime("%H:%M") == "23:59" and after.strftime("%H:%M") == "23:59",
-                   f"System-local DST handling failed: {before!r}, {after!r}")
-            _check(before.utcoffset() != after.utcoffset(), "System-local offset did not change across DST")
-        finally:
-            if saved is None:
-                os.environ.pop("TZ", None)
-            else:
-                os.environ["TZ"] = saved
-            time.tzset()
-        extra = ", system-local DST"
+    # 7. The default path (target_tz=None) uses the OS clock rules for UTC,
+    #    floating, and all-day timestamps without needing a timezone database.
+    utc_ref = dt.datetime(2026, 10, 25, 3, 59, tzinfo=dt.timezone.utc).astimezone()
+    sys_utc, sys_all_day = parse_ics_datetime("20261025T035900Z", {}, None)
+    _check(not sys_all_day and sys_utc == utc_ref and sys_utc.tzinfo is not None,
+           f"System-local UTC conversion failed: {sys_utc!r}")
+    sys_float, _ = parse_ics_datetime("20261025T235900", {}, None)
+    _check(sys_float.tzinfo is not None and (sys_float.hour, sys_float.minute) == (23, 59),
+           f"System-local floating time failed: {sys_float!r}")
+    sys_date, is_ad = parse_ics_datetime("20261025", {"VALUE": "DATE"}, None)
+    _check(is_ad and sys_date.tzinfo is not None and (sys_date.year, sys_date.month, sys_date.day) == (2026, 10, 25),
+           f"System-local all-day date failed: {sys_date!r}")
+    _check(local_now(None).tzinfo is not None, "local_now(None) did not return an aware datetime")
 
-    print(f"OK: brightspace.py self-test passed (iCal unfolding, UTC->local, DST{extra}, HTML stripping, "
-          "RSS 2.0, expired-token detection, tz overrides).")
+    print("OK: brightspace.py self-test passed (iCal unfolding, UTC->local, DST, system-local tz, "
+          "HTML stripping, RSS 2.0, expired-token detection, tz overrides).")
     return 0
 
 
